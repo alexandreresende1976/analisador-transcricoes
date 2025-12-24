@@ -1,1 +1,343 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analisador de Transcrições - MaximizAI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+</head>
+<body class="min-h-screen bg-slate-900 p-4 text-white">
+  <div class="max-w-5xl mx-auto">
+    
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h1 class="text-xl font-bold">🤖 Analisador de Transcrições</h1>
+        <p class="text-slate-400 text-sm">Mistral Small 3.2 24B via Ollama | MaximizAI</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="status-badge" class="px-3 py-1 rounded-full text-xs font-medium bg-yellow-500">
+          Verificando...
+        </span>
+        <button onclick="checkConnection()" class="text-xs text-slate-400 hover:text-white">
+          ↻ Refresh
+        </button>
+      </div>
+    </div>
 
+    <!-- Config -->
+    <div class="mb-4 p-4 bg-slate-800 rounded-lg">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="md:col-span-2">
+          <label class="block text-sm text-slate-400 mb-1">Endpoint (URL da API)</label>
+          <input 
+            type="text" 
+            id="endpoint" 
+            value="https://throw-complications-asset-stranger.trycloudflare.com"
+            class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            onchange="saveEndpoint()"
+          />
+          <p class="text-xs text-slate-500 mt-1">A URL é salva automaticamente no navegador</p>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-400 mb-1">Modelo</label>
+          <input 
+            type="text" 
+            id="model" 
+            value="mistral-small3.2:24b"
+            class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="error-box" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
+    </div>
+
+    <!-- Models -->
+    <div id="models-box" class="hidden mb-4 p-3 bg-slate-800 rounded-lg text-sm">
+      <span class="text-slate-400">Modelos disponíveis: </span>
+      <span id="models-list" class="text-green-400"></span>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      
+      <!-- Input -->
+      <div class="bg-slate-800 rounded-xl p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-semibold">📄 Transcrição</h2>
+          <span id="char-count" class="text-xs text-slate-500">0 caracteres</span>
+        </div>
+        <textarea
+          id="transcription"
+          placeholder="Cole a transcrição do atendimento aqui..."
+          class="w-full h-72 bg-slate-700 border border-slate-600 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-blue-500"
+          oninput="updateCharCount()"
+        ></textarea>
+        <button
+          id="analyze-btn"
+          onclick="analyze()"
+          class="w-full mt-3 py-2.5 rounded-lg font-medium transition bg-blue-600 hover:bg-blue-700"
+        >
+          🚀 Analisar Transcrição
+        </button>
+      </div>
+
+      <!-- Output -->
+      <div class="bg-slate-800 rounded-xl p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-semibold">📊 Resultado</h2>
+          <button
+            id="copy-btn"
+            onclick="copyResult()"
+            class="hidden text-xs text-slate-400 hover:text-white"
+          >
+            📋 Copiar
+          </button>
+        </div>
+        <div id="result-box" class="h-72 bg-slate-700 border border-slate-600 rounded-lg p-3 overflow-y-auto">
+          <p class="text-slate-500 text-sm">O resultado da análise aparecerá aqui</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-slate-500 text-xs mt-4">
+      🔒 Conexão HTTPS segura | Desenvolvido por MaximizAI
+    </p>
+  </div>
+
+  <script>
+    const SYSTEM_PROMPT = `Você é um especialista em análise de atendimentos ao cliente. Sua tarefa é gerar um resumo completo e fluido de transcrições de chamadas telefônicas, além de uma avaliação de satisfação do cliente.
+
+## Instruções
+
+Analise a transcrição fornecida e produza:
+
+### PARTE 1 - RESUMO
+
+Um resumo em **parágrafo único** que inclua obrigatoriamente:
+
+1. **Identificação**: Nome do cliente, nome do operador e terceiros mencionados
+2. **Motivo do contato**: O problema ou solicitação principal que motivou a ligação
+3. **Validações realizadas**: Dados confirmados durante o atendimento (CNPJ, endereço, telefone, e-mail)
+4. **Consultas e descobertas**: O que foi verificado no sistema e os resultados encontrados
+5. **Valores envolvidos**: Qualquer valor monetário mencionado
+6. **Assuntos secundários**: Outros temas levantados pelo cliente que não foram resolvidos na chamada
+7. **Estado emocional do cliente**: Percepções sobre o comportamento do cliente
+8. **Orientações fornecidas**: Instruções ou encaminhamentos dados ao cliente
+9. **Protocolo**: Número de protocolo informado, se houver
+10. **Status final**: Classificar como **resolvido**, **pendente de resolução** ou **não resolvido**, com justificativa
+
+### PARTE 2 - AVALIAÇÃO CSAT
+
+Atribua uma nota de satisfação do cliente (CSAT) de 1 a 5:
+
+| Nota | Classificação | Descrição |
+|------|---------------|-----------|
+| 1 | Muito Insatisfeito | Cliente encerrou irritado, problema não resolvido |
+| 2 | Insatisfeito | Cliente frustrado, resolução parcial ou insuficiente |
+| 3 | Neutro | Cliente nem satisfeito nem insatisfeito, dúvidas parcialmente esclarecidas |
+| 4 | Satisfeito | Cliente atendido adequadamente, problema resolvido ou bem encaminhado |
+| 5 | Muito Satisfeito | Cliente encerrou plenamente satisfeito, problema totalmente resolvido |
+
+**Justificativa**: Escreva um parágrafo único descrevendo a jornada emocional do cliente.
+
+## Regras de Estilo
+
+- Escreva em português brasileiro formal
+- Use parágrafos únicos e contínuos, sem bullets ou listas
+- Seja objetivo, mas inclua detalhes relevantes
+- Mantenha a cronologia dos eventos
+- Destaque o status final e a nota CSAT em **negrito**
+
+## Formato de Saída
+
+**RESUMO:**
+[Parágrafo único com o resumo completo]
+
+**CSAT:** [Nota]/5 - [Classificação]
+
+**JUSTIFICATIVA:**
+[Parágrafo único explicando a jornada emocional e justificando a nota]`;
+
+    let isOnline = false;
+
+    // Carregar endpoint salvo
+    function loadEndpoint() {
+      const saved = localStorage.getItem('ollama_endpoint');
+      if (saved) {
+        document.getElementById('endpoint').value = saved;
+      }
+    }
+
+    // Salvar endpoint
+    function saveEndpoint() {
+      const endpoint = document.getElementById('endpoint').value.trim();
+      localStorage.setItem('ollama_endpoint', endpoint);
+    }
+
+    function getEndpoint() {
+      return document.getElementById('endpoint').value.trim();
+    }
+
+    function getModel() {
+      return document.getElementById('model').value.trim();
+    }
+
+    function setStatus(status) {
+      const badge = document.getElementById('status-badge');
+      const colors = {
+        online: 'bg-green-500',
+        offline: 'bg-red-500',
+        checking: 'bg-yellow-500'
+      };
+      const labels = {
+        online: 'Online',
+        offline: 'Offline',
+        checking: 'Verificando...'
+      };
+      badge.className = `px-3 py-1 rounded-full text-xs font-medium ${colors[status]}`;
+      badge.textContent = labels[status];
+      isOnline = status === 'online';
+      updateButton();
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('error-box');
+      if (msg) {
+        box.textContent = '⚠️ ' + msg;
+        box.classList.remove('hidden');
+      } else {
+        box.classList.add('hidden');
+      }
+    }
+
+    function updateCharCount() {
+      const text = document.getElementById('transcription').value;
+      document.getElementById('char-count').textContent = text.length + ' caracteres';
+    }
+
+    function updateButton() {
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = !isOnline;
+      if (!isOnline) {
+        btn.className = 'w-full mt-3 py-2.5 rounded-lg font-medium bg-slate-600 text-slate-400 cursor-not-allowed';
+      } else {
+        btn.className = 'w-full mt-3 py-2.5 rounded-lg font-medium transition bg-blue-600 hover:bg-blue-700';
+      }
+    }
+
+    async function checkConnection() {
+      setStatus('checking');
+      showError(null);
+      
+      try {
+        const response = await fetch(`${getEndpoint()}/api/tags`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const models = data.models || [];
+          
+          if (models.length > 0) {
+            document.getElementById('models-box').classList.remove('hidden');
+            document.getElementById('models-list').textContent = models.map(m => m.name).join(', ');
+          }
+          
+          setStatus('online');
+        } else {
+          setStatus('offline');
+          showError(`HTTP ${response.status}`);
+        }
+      } catch (err) {
+        setStatus('offline');
+        showError(err.message);
+      }
+    }
+
+    async function analyze() {
+      const transcription = document.getElementById('transcription').value.trim();
+      
+      if (!transcription) {
+        showError('Cole uma transcrição para analisar');
+        return;
+      }
+
+      const btn = document.getElementById('analyze-btn');
+      const resultBox = document.getElementById('result-box');
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Analisando...';
+      btn.className = 'w-full mt-3 py-2.5 rounded-lg font-medium bg-slate-600 text-slate-400 cursor-not-allowed';
+      
+      resultBox.innerHTML = '<p class="text-slate-400 text-sm">Processando transcrição... Isso pode levar alguns segundos.</p>';
+      showError(null);
+      document.getElementById('copy-btn').classList.add('hidden');
+
+      try {
+        const response = await fetch(`${getEndpoint()}/api/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: getModel(),
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: `## Transcrição\n\n${transcription}` }
+            ],
+            stream: false,
+            options: {
+              temperature: 0.3,
+              num_predict: 1500
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Erro HTTP: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const result = data.message?.content || 'Sem resposta';
+        
+        resultBox.innerHTML = `<pre class="text-sm whitespace-pre-wrap text-white">${escapeHtml(result)}</pre>`;
+        document.getElementById('copy-btn').classList.remove('hidden');
+        
+      } catch (err) {
+        showError(`Erro: ${err.message}`);
+        resultBox.innerHTML = '<p class="text-red-400 text-sm">Erro ao processar. Verifique se o servidor está online.</p>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Analisar Transcrição';
+        btn.className = 'w-full mt-3 py-2.5 rounded-lg font-medium transition bg-blue-600 hover:bg-blue-700';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function copyResult() {
+      const resultBox = document.getElementById('result-box');
+      const text = resultBox.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '✅ Copiado!';
+        setTimeout(() => {
+          btn.textContent = '📋 Copiar';
+        }, 2000);
+      });
+    }
+
+    // Init
+    loadEndpoint();
+    checkConnection();
+  </script>
+</body>
+</html>
